@@ -24,8 +24,9 @@ class EnhancedPNGInspector:
                 
                 # Get all text metadata
                 if hasattr(img, 'text'):
+                    self.metadata['text'] = dict(img.text)  # Store original text
+                    self.metadata['raw_text'] = dict(img.text)  # Keep raw_text for backwards compatibility
                     self.metadata['text_keys'] = list(img.text.keys())
-                    self.metadata['raw_text'] = dict(img.text)
                     
                     # Parse ComfyUI parameters if present
                     if 'parameters' in img.text:
@@ -41,15 +42,27 @@ class EnhancedPNGInspector:
                             self.metadata['elo_rating'] = float(img.text['elo_rating'])
                         except ValueError:
                             self.metadata['elo_rating'] = "Found but invalid format"
+                else:
+                    # Ensure text field exists even if empty
+                    self.metadata['text'] = {}
+                    self.metadata['raw_text'] = {}
+                    self.metadata['text_keys'] = []
+                    
         except FileNotFoundError:
             print(f"Error: File not found - {self.image_path}")
             self.metadata['error'] = 'File not found'
+            self.metadata['text'] = {}
+            self.metadata['raw_text'] = {}
         except Image.UnidentifiedImageError:
             print(f"Error: Not a valid PNG file or corrupted - {self.image_path}")
             self.metadata['error'] = 'Invalid or corrupted PNG'
+            self.metadata['text'] = {}
+            self.metadata['raw_text'] = {}
         except Exception as e:
             print(f"Error: Unexpected error while reading {self.image_path} - {str(e)}")
             self.metadata['error'] = f'Unexpected error: {str(e)}'
+            self.metadata['text'] = {}
+            self.metadata['raw_text'] = {}
 
     def print_detailed_summary(self) -> None:
         """Print a detailed formatted summary of the metadata."""

@@ -15,6 +15,77 @@ TEST_ROOT = Path(__file__).parent
 TEST_DATA = TEST_ROOT / "data"
 TEST_TEMP = TEST_DATA / "temp"
 
+def create_realistic_test_image(width: int, height: int) -> np.ndarray:
+    """
+    Creates a more realistic test image with proper texture and complexity.
+    """
+    # Create base noise layers
+    fine_noise = np.random.normal(0, 1, (height, width, 3))
+    coarse_noise = np.random.normal(0, 1, (height//8, width//8, 3))
+    
+    # Upscale coarse noise
+    coarse_upscaled = np.kron(coarse_noise, np.ones((8, 8, 1)))
+    if coarse_upscaled.shape != (height, width, 3):
+        coarse_upscaled = coarse_upscaled[:height, :width, :]
+    
+    # Create gradients
+    y, x = np.mgrid[0:height, 0:width]
+    gradient_x = x / width
+    gradient_y = y / height
+    
+    # Combine layers with varying weights
+    combined = (
+        gradient_x[..., np.newaxis] * 0.3 +
+        gradient_y[..., np.newaxis] * 0.3 +
+        fine_noise * 0.2 +
+        coarse_upscaled * 0.2
+    )
+    
+    # Normalize and convert to uint8
+    combined = (combined - combined.min()) / (combined.max() - combined.min())
+    image_data = (combined * 255).astype(np.uint8)
+    
+    # Add some color variation
+    image_data[..., 0] = np.clip(image_data[..., 0] * 1.2, 0, 255)  # Boost red
+    image_data[..., 2] = np.clip(image_data[..., 2] * 0.8, 0, 255)  # Reduce blue
+    
+    return image_data
+
+def export_speed_results(results):
+    """Export speed comparison results to CSV for later visualization."""
+    import csv
+    from datetime import datetime
+    
+    # Generate filename with timestamp
+    timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    filename = f"speed_comparison_{timestamp}.csv"
+    
+    with open(filename, 'w', newline='') as csvfile:
+        writer = csv.writer(csvfile)
+        # Write header
+        writer.writerow(['Image Size (MP)', 'File Size (MB)', 
+                        'Width', 'Height',
+                        'PIL Mean (ms)', 'PIL Std (ms)', 
+                        'Chunk Mean (ms)', 'Chunk Std (ms)',
+                        'Speedup Factor'])
+        
+        # Write data rows
+        for result in results:
+            writer.writerow([
+                result['megapixels'],
+                result['file_size'],
+                result['width'],
+                result['height'],
+                result['pil_mean'] * 1000,  # Convert to ms
+                result['pil_std'] * 1000,
+                result['chunk_mean'] * 1000,
+                result['chunk_std'] * 1000,
+                result['pil_mean'] / result['chunk_mean']
+            ])
+    
+    print(f"Results exported to {filename}")
+    return filename
+
 class TestExtendedSpeedComparison:
     # Test sizes including some massive images
     SIZES = [
@@ -27,51 +98,78 @@ class TestExtendedSpeedComparison:
         (6144, 6144),     # 36 MP
     ]
 
+    # Initialize results list here
+    results = [] 
+
     @pytest.fixture(scope="class")
     def setup_test_env(self):
         """Setup test environment once for all test cases"""
         TEST_TEMP.mkdir(parents=True, exist_ok=True)
-        
+
+        self.__class__.results = []
+    
         print("\nCreating test images:")
         for width, height in self.SIZES:
-            # Create gradient image
-            img_array = np.zeros((height, width, 3), dtype=np.uint8)
-            for i in range(height):
-                for j in range(width):
-                    img_array[i, j] = [(i * 255) // height, (j * 255) // width, 128]
-            
-            img = Image.fromarray(img_array)
+            # Create realistic image data
+            image_data = create_realistic_test_image(width, height)
+            img = Image.fromarray(image_data)
             
             # Add substantial ComfyUI-like metadata
             metadata = PngInfo()
             workflow = {
-                "test_node": {
-                    "inputs": {
-                        "seed": 42,
-                        "steps": 20,
-                        "cfg": 7.5,
-                        "sampler_name": "euler_a",
-                        "scheduler": "normal",
-                        "denoise": 0.75,
+                "nodes": {
+                    "1": {
+                        "inputs": {
+                            "seed": np.random.randint(1000000),
+                            "steps": 20,
+                            "cfg": 7.5,
+                            "sampler_name": "euler_a",
+                            "scheduler": "normal",
+                            "denoise": 0.75,
+                            "noise_offset": 0.1,
+                            "clip_skip": 2,
+                        },
+                        "class_type": "KSampler",
                     },
-                    "class_type": "TestNode",
-                    "additional_data": "x" * 1000  # Bulk up metadata
-                }
+                    "2": {
+                        "inputs": {
+                            "ckpt_name": "v1-5-pruned.ckpt",
+                            "vae_name": "vae-ft-mse-840000-ema-pruned.ckpt",
+                        },
+                        "class_type": "CheckpointLoaderSimple",
+                    },
+                },
+                "extra": {
+                    "version": "v1.3.0",
+                    "timestamp": "2024-02-24-07-36-00",
+                    "generation_mode": "txt2img",
+                },
             }
             metadata.add_text('workflow', json.dumps(workflow))
-            metadata.add_text('prompt', json.dumps({
-                "positive": "a detailed test prompt " * 20,
-                "negative": "test negative prompt " * 10
-            }))
+            
+            # Add a complex prompt
+            prompt = {
+                "positive": ("masterpiece, best quality, highly detailed, " * 5 +
+                           "ultra realistic, photographic, 8k, raw photo, " +
+                           "unedited, professional photography, hyperrealistic " +
+                           "documentary style, award winning photography"),
+                "negative": ("worst quality, low quality, normal quality, " * 3 +
+                           "lowres, bad anatomy, bad hands, text, error, " +
+                           "missing fingers, cropped, jpeg artifacts")
+            }
+            metadata.add_text('prompt', json.dumps(prompt))
             
             filename = f"test_{width}x{height}.png"
-            img.save(TEST_TEMP / filename, pnginfo=metadata)
+            img.save(TEST_TEMP / filename, "PNG", pnginfo=metadata, optimize=True)
             
             file_size = (TEST_TEMP / filename).stat().st_size
             print(f"{width}x{height}: {file_size / (1024*1024):.1f} MB")
         
         yield
-        
+
+        # Export results after all tests complete
+        export_speed_results(self.results)
+
         # Cleanup at end of all tests
         shutil.rmtree(TEST_TEMP)
 
@@ -153,6 +251,20 @@ class TestExtendedSpeedComparison:
         # For larger images, chunk method should be significantly faster
         if width >= 1024:
             assert chunk_mean < pil_mean, "Chunk method should be faster for large images"
+
+        # Store results in a dict
+        result = {
+            'megapixels': megapixels,
+            'file_size': file_size,
+            'width': width,
+            'height': height,
+            'pil_mean': pil_mean,
+            'pil_std': pil_std,
+            'chunk_mean': chunk_mean,
+            'chunk_std': chunk_std
+        }
+        
+        self.results.append(result)
 
     def _run_pil_update(self, image_path: Path) -> None:
         with Image.open(image_path) as img:

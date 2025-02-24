@@ -25,10 +25,11 @@ class PNGMetadataHandler:
     def __init__(self, filepath: Path):
         self.filepath = filepath
         self._chunks: List[PNGChunk] = []
-        self._load_chunks()
+        self._iend_position: Optional[int] = None
+        self._load_metadata_chunks()
 
-    def _load_chunks(self) -> None:
-        """Load all chunks from PNG file while preserving their positions."""
+    def _load_metadata_chunks(self) -> None:
+        """Load all chunks and track IEND position."""
         with open(self.filepath, 'rb') as f:
             # Verify PNG signature
             signature = f.read(8)
@@ -38,11 +39,13 @@ class PNGMetadataHandler:
             while True:
                 chunk_start = f.tell()
                 length_bytes = f.read(4)
-                if not length_bytes:
-                    break  # End of file
-                    
+                if not length_bytes or len(length_bytes) < 4:
+                    break
+
                 length = struct.unpack('>I', length_bytes)[0]
                 type_bytes = f.read(4)
+                
+                # Read data for all chunks
                 data = f.read(length)
                 crc = f.read(4)
                 
@@ -53,7 +56,12 @@ class PNGMetadataHandler:
                     length=length,
                     crc=crc
                 )
+                
                 self._chunks.append(chunk)
+                
+                if type_bytes == b'IEND':
+                    self._iend_position = chunk_start
+                    break
 
     def _get_text_chunks(self) -> List[PNGChunk]:
         """Get all tEXt chunks."""
@@ -114,20 +122,28 @@ class PNGMetadataHandler:
                 # Create new chunk
                 new_chunk = self._create_text_chunk(key, value)
                 
-                # Write all chunks, replacing or inserting the new one
-                for i, chunk in enumerate(self._chunks):
+                # Write all chunks except IEND
+                iend_chunk = None
+                for chunk in self._chunks:
+                    if chunk.type == b'IEND':
+                        iend_chunk = chunk
+                        continue
+                        
                     if chunk is existing_chunk:
                         # Write new chunk instead
                         self._write_chunk(dst, new_chunk)
                     else:
-                        # If we need to insert and haven't yet
-                        if (existing_chunk is None and 
-                            chunk.type == b'IEND' and 
-                            new_chunk not in self._chunks):
-                            self._write_chunk(dst, new_chunk)
                         # Write original chunk
                         self._write_chunk(dst, chunk)
                 
+                # If we didn't replace an existing chunk, add the new one before IEND
+                if existing_chunk is None:
+                    self._write_chunk(dst, new_chunk)
+                    
+                # Write IEND chunk at the end
+                if iend_chunk:
+                    self._write_chunk(dst, iend_chunk)
+                    
             # Atomic replace
             temp_path.replace(self.filepath)
             
@@ -135,11 +151,14 @@ class PNGMetadataHandler:
             if existing_chunk:
                 self._chunks[existing_index] = new_chunk
             else:
-                self._chunks.insert(-1, new_chunk)  # Insert before IEND
+                # Insert before IEND
+                iend_index = next((i for i, c in enumerate(self._chunks) if c.type == b'IEND'), len(self._chunks))
+                self._chunks.insert(iend_index, new_chunk)
                 
         finally:
             # Cleanup temp file if something went wrong
-            temp_path.unlink(missing_ok=True)
+            if temp_path.exists():
+                temp_path.unlink()
 
     def _write_chunk(self, f: BinaryIO, chunk: PNGChunk) -> None:
         """Write a single chunk to file."""

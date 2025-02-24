@@ -7,6 +7,7 @@ from PIL import Image
 from PIL.PngImagePlugin import PngInfo
 import json
 import shutil
+import numpy as np
 from png_metadata_tools.chunk_handler import PNGMetadataHandler
 
 # Test data paths
@@ -25,22 +26,23 @@ class TestPNGChunkHandler:
         for file in TEST_TEMP.glob("*"):
             file.unlink(missing_ok=True)
 
-    def _create_test_image(self, path: Path, size=(512, 512)) -> None:
-        """Create a test image with ComfyUI-like metadata"""
-        img = Image.new('RGB', size, (240, 240, 240))
-        metadata = PngInfo()
+    def _create_test_image(self, path: Path, metadata: dict = None) -> None:
+        """Create a test image with optional metadata"""
+        # Create random test image data
+        size = (512, 512)
+        img_array = np.random.randint(0, 255, (size[1], size[0], 3), dtype=np.uint8)
+        img = Image.fromarray(img_array, 'RGB')
         
-        # Add some ComfyUI-like metadata
-        workflow = {
-            "test_node": {
-                "inputs": {"seed": 42},
-                "class_type": "TestNode"
-            }
-        }
-        metadata.add_text('workflow', json.dumps(workflow))
-        
-        img.save(path, pnginfo=metadata)
-        return path
+        if metadata:
+            png_info = PngInfo()
+            for key, value in metadata.items():
+                if isinstance(value, (dict, list)):
+                    png_info.add_text(key, json.dumps(value))
+                else:
+                    png_info.add_text(key, str(value))
+            img.save(path, 'PNG', pnginfo=png_info)
+        else:
+            img.save(path, 'PNG')
 
     def test_basic_metadata_operations(self):
         """Test basic metadata read/write operations"""
@@ -55,8 +57,6 @@ class TestPNGChunkHandler:
         with Image.open(test_path) as img:
             assert 'elo_rating' in img.text
             assert float(img.text['elo_rating']) == 1500.0
-            # Verify original metadata preserved
-            assert 'workflow' in img.text
             
         # Test reading
         handler = PNGMetadataHandler(test_path)
@@ -162,14 +162,12 @@ class TestPNGChunkHandler:
         """Test that ComfyUI metadata is preserved during updates"""
         test_path = TEST_TEMP / "comfy_test.png"
         
-        # Create image with ComfyUI metadata
-        img = Image.new('RGB', (512, 512), (240, 240, 240))
-        metadata = PngInfo()
-        workflow = {"test": "data"}
-        prompt = {"another": "test"}
-        metadata.add_text('workflow', json.dumps(workflow))
-        metadata.add_text('prompt', json.dumps(prompt))
-        img.save(test_path, pnginfo=metadata)
+        # Create test image with ComfyUI metadata
+        metadata = {
+            'workflow': {"test": "data"},
+            'prompt': {"another": "test"}
+        }
+        self._create_test_image(test_path, metadata)
         
         # Update rating
         handler = PNGMetadataHandler(test_path)
@@ -177,6 +175,6 @@ class TestPNGChunkHandler:
         
         # Verify all metadata
         with Image.open(test_path) as img:
-            assert json.loads(img.text['workflow']) == workflow
-            assert json.loads(img.text['prompt']) == prompt
+            assert json.loads(img.text['workflow']) == metadata['workflow']
+            assert json.loads(img.text['prompt']) == metadata['prompt']
             assert float(img.text['elo_rating']) == 1500.0

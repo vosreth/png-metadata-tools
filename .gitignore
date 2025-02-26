@@ -1,5 +1,6 @@
 # dump_src.py output
 src_contents.txt
+dump_src.py
 
 # Test images and data
 tests/data/images/

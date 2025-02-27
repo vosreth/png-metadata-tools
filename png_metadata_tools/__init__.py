@@ -128,12 +128,15 @@ class MetaEditor:
         with pngmeta.MetaEditor("image.png") as meta:
             meta["rating"] = 1500.0
             meta["processed"] = True
+            rating = meta.get("rating", 1000)  # With default value
     """
     def __init__(self, filepath: Union[str, Path], use_streaming: Optional[bool] = None):
         self.filepath = filepath
         self.use_streaming = use_streaming
         self.handler = None
         self._metadata = None
+        self._update_dict = {}
+        self._delete_set = set()
         
     def __enter__(self):
         self.handler = PNGMetadataHandlerBase.create(self.filepath, self.use_streaming)
@@ -145,30 +148,54 @@ class MetaEditor:
             # Only write changes if no exception occurred
             for key, value in self._updates.items():
                 self.handler.update_metadata(key, str(value))
+            # Process any deletes
+            for key in self._deletes:
+                self.handler.remove_metadata(key)
         
     def __getitem__(self, key):
-        return self._metadata.get(key)
+        if key in self._deletes:
+            raise KeyError(key)
+        if key in self._updates:
+            return self._updates[key]
+        if key in self._metadata:
+            return self._metadata[key]
+        raise KeyError(key)
+    
+    def get(self, key, default=None):
+        """
+        Get a metadata value with a default fallback.
+        
+        Args:
+            key: Metadata key to retrieve.
+            default: Value to return if key does not exist.
+            
+        Returns:
+            Metadata value or default if key doesn't exist.
+        """
+        try:
+            return self[key]
+        except KeyError:
+            return default
         
     def __setitem__(self, key, value):
         self._updates[key] = value
+        if key in self._deletes:
+            self._deletes.remove(key)
         
     def __delitem__(self, key):
-        if key in self._metadata:
-            self._deletes.add(key)
+        if key in self._updates:
+            del self._updates[key]
+        self._deletes.add(key)
             
     def __contains__(self, key):
-        return key in self._metadata and key not in self._deletes
+        return (key in self._metadata or key in self._updates) and key not in self._deletes
         
     @property
     def _updates(self):
-        if not hasattr(self, '_update_dict'):
-            self._update_dict = {}
         return self._update_dict
         
     @property
     def _deletes(self):
-        if not hasattr(self, '_delete_set'):
-            self._delete_set = set()
         return self._delete_set
 
 class BatchEditor:

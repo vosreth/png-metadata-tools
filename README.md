@@ -1,5 +1,5 @@
-# Warning 
-This project was designed and implemented by Claude 3.7.
+## Caution
+This project was designed and implemented by Claude 3.7 and should be thoroughly reviewed, all 81 tests pass though.
 
 # PNG Metadata Tools
 

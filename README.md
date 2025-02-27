@@ -1,5 +1,5 @@
-# Warning 
-This project was designed and implemented by Claude 3.7.
+## Caution
+This project was designed and implemented by Claude 3.7 and should be thoroughly reviewed, all 81 tests pass though.
 
 # PNG Metadata Tools
 
@@ -10,25 +10,25 @@ A sophisticated system for managing metadata in PNG files with remarkable perfor
 Our elegantly designed API provides up to 33x faster metadata operations than PIL, particularly for larger images:
 
 ```python
-import png_metadata_tools as pngmeta
+import png_metadata_tools as pmt
 
 # Read metadata
-metadata = pngmeta.read("path/to/image.png")
+metadata = pmt.read("path/to/image.png")
 
 # Write metadata
-pngmeta.write("path/to/image.png", {"rating": 1500, "tags": "landscape,mountain"})
+pmt.write("path/to/image.png", {"rating": 1500, "tags": "landscape,mountain"})
 
 # Update a single value
-pngmeta.update("path/to/image.png", "rating", 1600)
+pmt.update("path/to/image.png", "rating", 1600)
 
 # Check if a key exists
-has_rating = pngmeta.has_key("path/to/image.png", "rating")
+has_rating = pmt.has_key("path/to/image.png", "rating")
 
 # Remove metadata
-pngmeta.remove("path/to/image.png", "old_tag")
+pmt.remove("path/to/image.png", "old_tag")
 
 # Context manager for batch editing
-with pngmeta.MetaEditor("path/to/image.png") as meta:
+with pmt.MetaEditor("path/to/image.png") as meta:
     meta["rating"] = 1500
     meta["processed"] = True
     meta["author"] = "British Standards"
@@ -40,7 +40,7 @@ For efficient processing of multiple files, our batch operations system truly sh
 
 ```python
 # Process multiple files with the same metadata
-with pngmeta.BatchEditor(workers=4) as batch:
+with pmt.BatchEditor(workers=4) as batch:
     # Update metadata for all PNG files in a directory
     for path in Path("my_images").glob("*.png"):
         batch.update(path, {
@@ -113,7 +113,7 @@ results = backup_mgr.batch_backup(image_paths)
 
 ## PNG Metadata Viewer
 
-Our package includes a splendid GUI viewer for inspecting and editing PNG metadata:
+Our package includes a splendid GUI viewer for inspecting PNG metadata on Windows 11:
 
 ```
 # Run the installer script
@@ -125,7 +125,7 @@ python PNGMetadataViewer/install_viewer.py --uninstall
 
 ![Context Menu Example](context.png)
 
-This adds a "View PNG Metadata" option to your context menu for PNG files, providing a convenient interface for viewing and editing metadata.
+This adds a "View PNG Metadata" option to your context menu for PNG files, providing a convenient interface for viewing metadata.
 
 ## Performance Benchmarks
 
@@ -188,6 +188,7 @@ Clone the repository to access the full package including the PNG Metadata Viewe
 ```bash
 git clone https://github.com/vosreth/png-metadata-tools.git
 cd png-metadata-tools
+pip install -e .
 ```
 
 ### Requirements
@@ -207,12 +208,6 @@ psutil==7.0.0
 pytest==8.3.4
 pytest-cov==6.0.0
 tkinterdnd2==0.4.2
-```
-
-Install dependencies:
-
-```bash
-pip install -r requirements.txt
 ```
 
 *Delivering proper British standards for digital excellence since 2025*
